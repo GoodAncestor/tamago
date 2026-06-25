@@ -22,29 +22,11 @@ These constants match the ARM64 FDT emitted by Cloud Hypervisor.
 Validation status
 =================
 
-The current implementation has been validated far enough for Cloud Hypervisor
-to accept an AArch64 Linux `Image` wrapper and start the vCPU with the expected
-FDT memory map.
-
-On a Fedora Asahi ARM64 host with 16K pages, execution currently reaches
-TamaGo's ARM64 `Hwinit0` under Cloud Hypervisor/KVM and stalls while enabling
-`SCTLR_EL1.M` in `InitMMU`. Temporary PL011 breadcrumbs showed the VM reaches
-the EL2-to-EL1 drop, `Hwinit0`, `fp_enable`, `TTBR0_EL1`, and TLB invalidation
-before the first post-MMU instruction fails to complete.
-
-The same Image reaches the post-MMU path under QEMU `virt` with TCG, confirming
-that the Linux Image wrapper and the existing 4K-granule TamaGo translation
-tables are structurally usable in an ARM64 VM. QEMU `virt` then faults later in
-`GIC.Init()` because this Cloud Hypervisor board intentionally uses the Cloud
-Hypervisor GIC register map, not QEMU's `virt` map.
-
-An experimental 16K-granule table layout and a 48-bit `TCR_EL1.IPS` setting did
-not move the Cloud Hypervisor/KVM path past MMU enable on that host, so the
-current blocker is more specific than simply converting TamaGo to 16K
-translation tables.
-
-End-to-end Cloud Hypervisor packet delivery still needs to be validated after
-the ARM64 KVM MMU-enable issue is resolved.
+The current implementation has been validated on a Fedora Asahi ARM64 host with
+16K host pages. Cloud Hypervisor accepts an AArch64 Linux `Image` wrapper, starts
+the vCPU with the expected FDT memory map, reaches TamaGo post-MMU execution,
+discovers virtio-net through ECAM, and passes a tap-backed appliance HTTP
+fingerprint smoke test.
 
 The board reserves the top 128MB of guest RAM as a non-heap DMA carveout and
 maps it as Normal non-cacheable memory. This avoids overlapping DMA buffers with
@@ -67,16 +49,15 @@ cloud-hypervisor \
 Remaining work
 ==============
 
-The next upstreamable increment is ARM64 MSI/MSI-X or legacy INTx routing
-suitable for virtio-pci devices, plus explicit cache maintenance if cacheable
-DMA mappings are introduced later.
+The next upstreamable increment is broader validation of ARM64 virtio-pci
+interrupt routing across Cloud Hypervisor versions and hosts, plus explicit
+cache maintenance if cacheable DMA mappings are introduced later.
 
-Additional validation is still needed for Cloud Hypervisor virtio-net,
-SpectrumOS nested virtual machines, AMD64 hosts, and ARM64 hosts. QEMU `virt`
-uses a different GIC/ECAM map and should be kept as a separate board target.
-Spectrum/QEMU logs also show transitional virtio device IDs in some
-configurations, so compatibility with transitional virtio-net remains a
-separate follow-up.
+Additional validation is still needed for SpectrumOS nested virtual machines,
+AMD64 hosts, and more ARM64 hosts. QEMU `virt` uses a different GIC/ECAM map
+and should be kept as a separate board target. Spectrum/QEMU logs also show
+transitional virtio device IDs in some configurations, so compatibility with
+transitional virtio-net remains a separate follow-up.
 
 Compiling
 =========
