@@ -91,11 +91,10 @@ func negotiate(deviceFeatures, driverFeatures uint64) (features uint64) {
 	bits.Clear64(&features, Packed)
 	bits.Clear64(&features, NotificationData)
 
-	// keep all remaining reserved features, clear device type ones
-	features &= deviceReservedFeatureMask
-
-	// apply device type features from the driver
-	features &= driverFeatures
+	// keep all remaining reserved features, apply only supported device type
+	// features from the driver
+	features = (features & deviceReservedFeatureMask) |
+		(features & deviceSpecificFeatureMask & driverFeatures)
 
 	return
 }
