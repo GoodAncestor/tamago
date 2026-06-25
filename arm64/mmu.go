@@ -51,12 +51,18 @@ const (
 	DeviceRegion uint64 = 0b00000000
 	// Normal, Inner/Outer WB/WA/RA
 	MemoryRegion uint64 = 0b11111111
+	// Normal, Inner/Outer Non-cacheable
+	NormalNonCacheableRegion uint64 = 0b01000100
 
-	deviceAttributeIndex = 0
-	memoryAttributeIndex = 1
+	deviceAttributeIndex   = 0
+	memoryAttributeIndex   = 1
+	normalNCAttributeIndex = 2
 
-	deviceAttributes = 1<<TTE_AF | TTE_OUTER_SH | TTE_AP_00<<TTE_AP | deviceAttributeIndex<<TTE_ATTR
-	memoryAttributes = 1<<TTE_AF | TTE_INNER_SH | TTE_AP_00<<TTE_AP | memoryAttributeIndex<<TTE_ATTR
+	deviceAttributes   = 1<<TTE_AF | TTE_OUTER_SH | TTE_AP_00<<TTE_AP | deviceAttributeIndex<<TTE_ATTR
+	memoryAttributes   = 1<<TTE_AF | TTE_INNER_SH | TTE_AP_00<<TTE_AP | memoryAttributeIndex<<TTE_ATTR
+	normalNCAttributes = 1<<TTE_AF | TTE_INNER_SH | TTE_AP_00<<TTE_AP | normalNCAttributeIndex<<TTE_ATTR
+
+	NormalNonCacheableAttributes = normalNCAttributes | TTE_BLOCK
 )
 
 // MMU access permissions
@@ -238,6 +244,7 @@ func (cpu *CPU) InitMMU() {
 	//   * attr1: memory
 	write_mair_el1(
 		MemoryRegion<<(8*memoryAttributeIndex) |
+			NormalNonCacheableRegion<<(8*normalNCAttributeIndex) |
 			DeviceRegion<<(8*deviceAttributeIndex))
 
 	// set translation control register
@@ -245,4 +252,110 @@ func (cpu *CPU) InitMMU() {
 
 	// enable MMU
 	set_ttbr0_el1(l1pageTableStart)
+}
+
+// ConfigureMMU (re)configures the translation tables for the provided memory
+// range with the argument attribute flags. An alias argument greater than zero
+// specifies the physical address corresponding to the start argument in case
+// virtual memory is required, otherwise a flat 1:1 mapping is set.
+//
+// Ranges below 1GB are configured with 2MB block mappings from the first L2
+// table. Ranges at or above 1GB are configured with 1GB L1 block mappings.
+func (cpu *CPU) ConfigureMMU(start, end, alias, flags uint64) {
+	ramStart, _ := runtime.MemRegion()
+	l1pageTableStart := ramStart + l1pageTableOffset
+
+	if end <= start {
+		return
+	}
+
+	cpu.configureL1(l1pageTableStart, start, end, alias, flags)
+	cpu.FlushTLBs()
+}
+
+func (cpu *CPU) configureL1(table, start, end, alias, flags uint64) {
+	startEntry := start >> 30
+	endEntry := (end + (1 << 30) - 1) >> 30
+
+	for i := startEntry; i < l1pageTableSize && i < endEntry; i++ {
+		sectionStart := i << 30
+		sectionEnd := sectionStart + (1 << 30)
+		rangeStart := max(start, sectionStart)
+		rangeEnd := min(end, sectionEnd)
+		page := table + 8*i
+		tte := reg.Read64(page)
+
+		if tte&(0b11<<TTE_DESC) == TTE_TABLE {
+			table := tte &^ 0xfff
+			tableAlias := uint64(0)
+
+			if alias > 0 {
+				tableAlias = alias + rangeStart - start
+			}
+
+			cpu.configureL2(table, rangeStart, rangeEnd, tableAlias, flags)
+			continue
+		}
+
+		pa := sectionStart
+		if alias > 0 {
+			pa = alias + sectionStart - start
+		}
+
+		reg.Write64(page, pa|flags)
+	}
+}
+
+func (cpu *CPU) configureL2(table, start, end, alias, flags uint64) {
+	section := start &^ ((1 << 30) - 1)
+	startEntry := (start - section) >> 21
+	endEntry := (end + (1 << 21) - 1 - section) >> 21
+
+	for i := startEntry; i < l2pageTableSize && i < endEntry; i++ {
+		pa := section + (i << 21)
+		if alias > 0 {
+			pa = alias + (i-startEntry)<<21
+		}
+
+		reg.Write64(table+8*i, pa|flags)
+	}
+}
+
+func (cpu *CPU) updateMMU(start, end uint64, mask uint64, val uint64) {
+	ramStart, _ := runtime.MemRegion()
+	l1pageTableStart := ramStart + l1pageTableOffset
+	l2pageTableStart := ramStart + l2pageTableOffset
+
+	update := func(page uint64) {
+		tte := reg.Read64(page)
+		reg.Write64(page, (tte&^mask)|val)
+	}
+
+	if start < 1<<30 {
+		l2End := end
+		if l2End > 1<<30 {
+			l2End = 1 << 30
+		}
+
+		for i, e := start>>21, (l2End+(1<<21)-1)>>21; i < l2pageTableSize && i < e; i++ {
+			update(l2pageTableStart + 8*i)
+		}
+
+		start = 1 << 30
+	}
+
+	for i, e := start>>30, (end+(1<<30)-1)>>30; i < l1pageTableSize && i < e; i++ {
+		update(l1pageTableStart + 8*i)
+	}
+
+	cpu.FlushTLBs()
+}
+
+// SetAttributes (re)configures translation table attributes for the provided
+// memory range.
+func (cpu *CPU) SetAttributes(start, end, flags uint64) {
+	mask := TTE_EXECUTE_NEVER | (0b11 << TTE_SH) | (0b11 << TTE_AP) |
+		(0b111 << TTE_ATTR) | TTE_DESC
+
+	cpu.updateMMU(start, end, mask, flags)
 }
