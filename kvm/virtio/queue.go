@@ -164,6 +164,16 @@ type Used struct {
 	last uint16
 }
 
+// IndexCached returns the last cached used ring index.
+func (d *Used) IndexCached() uint16 {
+	return d.index
+}
+
+// Last returns the last processed used ring index.
+func (d *Used) Last() uint16 {
+	return d.last
+}
+
 // Bytes converts the descriptor structure to byte array format.
 func (d *Used) Bytes() []byte {
 	buf := new(bytes.Buffer)
@@ -211,6 +221,17 @@ type VirtualQueue struct {
 	device uint // physical address for QueueDevice
 
 	size uint16
+}
+
+// State returns the current available and used queue indices.
+func (d *VirtualQueue) State() (avail uint16, used uint16, last uint16) {
+	d.Lock()
+	defer d.Unlock()
+
+	avail = d.Available.index
+	used = d.Used.Index()
+	last = d.Used.last
+	return
 }
 
 // Bytes converts the descriptor structure to byte array format, the device

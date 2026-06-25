@@ -11,10 +11,9 @@ package virtio
 import (
 	"encoding/binary"
 	"errors"
+	"unsafe"
 
-	"github.com/usbarmory/tamago/amd64"
 	"github.com/usbarmory/tamago/dma"
-	"github.com/usbarmory/tamago/internal/reg"
 	"github.com/usbarmory/tamago/soc/intel/pci"
 )
 
@@ -106,10 +105,44 @@ type PCI struct {
 	notifyMultiplier uint32
 
 	// DMA buffers
-	common []byte
-	config []byte
+	common     []byte
+	commonAddr uint
+	config     []byte
+	configAddr uint
 
 	msix *pci.CapabilityMSIX
+}
+
+func (io *PCI) common8(off int) uint8 {
+	return *(*uint8)(unsafe.Pointer(uintptr(io.commonAddr + uint(off))))
+}
+
+func (io *PCI) writeCommon8(off int, val uint8) {
+	*(*uint8)(unsafe.Pointer(uintptr(io.commonAddr + uint(off)))) = val
+}
+
+func (io *PCI) common16(off int) uint16 {
+	return *(*uint16)(unsafe.Pointer(uintptr(io.commonAddr + uint(off))))
+}
+
+func (io *PCI) writeCommon16(off int, val uint16) {
+	*(*uint16)(unsafe.Pointer(uintptr(io.commonAddr + uint(off)))) = val
+}
+
+func (io *PCI) common32(off int) uint32 {
+	return *(*uint32)(unsafe.Pointer(uintptr(io.commonAddr + uint(off))))
+}
+
+func (io *PCI) writeCommon32(off int, val uint32) {
+	*(*uint32)(unsafe.Pointer(uintptr(io.commonAddr + uint(off)))) = val
+}
+
+func (io *PCI) common64(off int) uint64 {
+	return *(*uint64)(unsafe.Pointer(uintptr(io.commonAddr + uint(off))))
+}
+
+func (io *PCI) writeCommon64(off int, val uint64) {
+	*(*uint64)(unsafe.Pointer(uintptr(io.commonAddr + uint(off)))) = val
 }
 
 func (io *PCI) addCapability(off uint32, hdr *pci.CapabilityHeader) error {
@@ -126,11 +159,13 @@ func (io *PCI) addCapability(off uint32, hdr *pci.CapabilityHeader) error {
 		switch c.CfgType {
 		case capCommon:
 			io.common = buf
+			io.commonAddr = addr
 		case capNotify:
 			io.notifyAddress = uint64(addr)
 			io.notifyMultiplier = io.Device.Read(0, off+capabilityLength)
 		case capDevice:
 			io.config = buf
+			io.configAddr = addr
 		}
 	case pci.MSIX:
 		c := &pci.CapabilityMSIX{}
@@ -149,9 +184,9 @@ func (io *PCI) negotiate(driverFeatures uint64) (err error) {
 	io.features = negotiate(io.DeviceFeatures(), driverFeatures)
 	io.SetDriverFeatures(io.features)
 
-	io.common[deviceStatus] |= (1 << FeaturesOk)
+	io.writeCommon8(deviceStatus, io.common8(deviceStatus)|(1<<FeaturesOk))
 
-	if io.common[deviceStatus]&(1<<FeaturesOk) != (1 << FeaturesOk) {
+	if io.common8(deviceStatus)&(1<<FeaturesOk) != (1 << FeaturesOk) {
 		return errors.New("could not set features")
 	}
 
@@ -179,11 +214,11 @@ func (io *PCI) Init(features uint64) (err error) {
 	}
 
 	// reset
-	io.common[deviceStatus] = 0
+	io.writeCommon8(deviceStatus, 0)
 
 	// initialize driver
-	io.common[deviceStatus] |= (1 << Acknowledge)
-	io.common[deviceStatus] |= (1 << Driver)
+	io.writeCommon8(deviceStatus, io.common8(deviceStatus)|(1<<Acknowledge))
+	io.writeCommon8(deviceStatus, io.common8(deviceStatus)|(1<<Driver))
 
 	return io.negotiate(features)
 }
@@ -191,7 +226,11 @@ func (io *PCI) Init(features uint64) (err error) {
 // Config returns the device configuration layout.
 func (io *PCI) Config(size int) (config []byte) {
 	config = make([]byte, size)
-	copy(config, io.config)
+
+	for i := range config {
+		config[i] = *(*byte)(unsafe.Pointer(uintptr(io.configAddr + uint(i))))
+	}
+
 	return
 }
 
@@ -205,8 +244,8 @@ func (io *PCI) DeviceID() uint32 {
 // DeviceFeatures returns the device feature bits.
 func (io *PCI) DeviceFeatures() (features uint64) {
 	for i := uint32(0); i <= 1; i++ {
-		binary.LittleEndian.PutUint32(io.common[deviceFeatureSel:], i)
-		features |= uint64(binary.LittleEndian.Uint32(io.common[deviceFeature:])) << (i * 32)
+		io.writeCommon32(deviceFeatureSel, i)
+		features |= uint64(io.common32(deviceFeature)) << (i * 32)
 	}
 
 	return
@@ -215,8 +254,8 @@ func (io *PCI) DeviceFeatures() (features uint64) {
 // DriverFeatures returns the driver feature bits.
 func (io *PCI) DriverFeatures() (features uint64) {
 	for i := uint32(0); i <= 1; i++ {
-		binary.LittleEndian.PutUint32(io.common[driverFeatureSel:], i)
-		features |= uint64(binary.LittleEndian.Uint32(io.common[driverFeature:])) << (i * 32)
+		io.writeCommon32(driverFeatureSel, i)
+		features |= uint64(io.common32(driverFeature)) << (i * 32)
 	}
 
 	return
@@ -225,8 +264,8 @@ func (io *PCI) DriverFeatures() (features uint64) {
 // SetDriverFeatures sets the driver feature bits.
 func (io *PCI) SetDriverFeatures(features uint64) {
 	for i := uint32(0); i <= 1; i++ {
-		binary.LittleEndian.PutUint32(io.common[driverFeatureSel:], i)
-		binary.LittleEndian.PutUint32(io.common[driverFeature:], uint32(features>>(i*32)))
+		io.writeCommon32(driverFeatureSel, i)
+		io.writeCommon32(driverFeature, uint32(features>>(i*32)))
 	}
 
 	return
@@ -239,42 +278,42 @@ func (io *PCI) NegotiatedFeatures() (features uint64) {
 
 // QueueReady returns whether a queue is ready for use.
 func (io *PCI) QueueReady(index int) (ready bool) {
-	binary.LittleEndian.PutUint16(io.common[queueSel:], uint16(index))
-	return binary.LittleEndian.Uint16(io.common[queueEnable:]) != 0
+	io.writeCommon16(queueSel, uint16(index))
+	return io.common16(queueEnable) != 0
 }
 
 // MaxQueueSize returns the maximum virtual queue size.
 func (io *PCI) MaxQueueSize(index int) int {
-	binary.LittleEndian.PutUint16(io.common[queueSel:], uint16(index))
-	return int(binary.LittleEndian.Uint16(io.common[queueSize:]))
+	io.writeCommon16(queueSel, uint16(index))
+	return int(io.common16(queueSize))
 }
 
 // SetQueueSize sets the virtual queue size.
 func (io *PCI) SetQueueSize(index int, n int) {
-	binary.LittleEndian.PutUint16(io.common[queueSel:], uint16(index))
-	binary.LittleEndian.PutUint16(io.common[queueSize:], uint16(n))
+	io.writeCommon16(queueSel, uint16(index))
+	io.writeCommon16(queueSize, uint16(n))
 }
 
 // Status returns the device status.
 func (io *PCI) Status() uint32 {
-	return uint32(io.common[deviceStatus])
+	return uint32(io.common8(deviceStatus))
 }
 
 // SetQueue registers the indexed virtual queue for device access.
 func (io *PCI) SetQueue(index int, queue *VirtualQueue) {
 	desc, driver, device := queue.Address()
 
-	binary.LittleEndian.PutUint16(io.common[queueSel:], uint16(index))
-	binary.LittleEndian.PutUint64(io.common[queueDesc:], uint64(desc))
-	binary.LittleEndian.PutUint64(io.common[queueDriver:], uint64(driver))
-	binary.LittleEndian.PutUint64(io.common[queueDevice:], uint64(device))
-	binary.LittleEndian.PutUint16(io.common[queueEnable:], 1)
+	io.writeCommon16(queueSel, uint16(index))
+	io.writeCommon64(queueDesc, uint64(desc))
+	io.writeCommon64(queueDriver, uint64(driver))
+	io.writeCommon64(queueDevice, uint64(device))
+	io.writeCommon16(queueEnable, 1)
 }
 
 // SetReady indicates that the driver is set up and ready to drive the device.
 func (io *PCI) SetReady() {
-	io.queueNotifyOff = binary.LittleEndian.Uint16(io.common[queueNotifyOff:])
-	io.common[deviceStatus] |= (1 << DriverOk)
+	io.queueNotifyOff = io.common16(queueNotifyOff)
+	io.writeCommon8(deviceStatus, io.common8(deviceStatus)|(1<<DriverOk))
 }
 
 // QueueNotify notifies the device that a queue can be processed.
@@ -282,12 +321,12 @@ func (io *PCI) QueueNotify(index int) {
 	addr := io.notifyAddress
 	addr += uint64(index) * uint64(io.queueNotifyOff) * uint64(io.notifyMultiplier)
 
-	reg.Write64(addr, uint64(index))
+	*(*uint16)(unsafe.Pointer(uintptr(addr))) = uint16(index)
 }
 
 // ConfigVersion returns the device configuration (see Config field) version.
 func (io *PCI) ConfigVersion() uint32 {
-	return uint32(io.common[configGeneration])
+	return uint32(io.common8(configGeneration))
 }
 
 // EnableInterrupt enables MSI-X interrupt vector routing to a LAPIC instance
@@ -298,15 +337,18 @@ func (io *PCI) EnableInterrupt(id int, index int) (err error) {
 	}
 
 	entry := 0
-	addr := uint64(amd64.LAPIC_BASE)
-	data := uint32(id)
+	addr, data, err := interruptVector(id)
+
+	if err != nil {
+		return
+	}
 
 	if err = io.msix.EnableInterrupt(entry, addr, data); err != nil {
 		return
 	}
 
-	binary.LittleEndian.PutUint16(io.common[queueSel:], uint16(index))
-	binary.LittleEndian.PutUint16(io.common[queueMSIXVector:], uint16(entry))
+	io.writeCommon16(queueSel, uint16(index))
+	io.writeCommon16(queueMSIXVector, uint16(entry))
 
 	return
 }

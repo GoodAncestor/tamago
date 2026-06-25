@@ -7,6 +7,31 @@ Copyright (c) The TamaGo Authors. All Rights Reserved.
 
 ![TamaGo gopher](https://github.com/usbarmory/tamago/wiki/images/tamago.svg?sanitize=true)
 
+GoodAncestor fork
+=================
+
+This fork tracks experimental platform work for running TamaGo applications as
+small security appliances across both embedded hardware and virtualized
+SpectrumOS environments.
+
+The current fork-specific focus is ARM64 Cloud Hypervisor/QEMU `virt` support:
+
+ - PL011 serial console support for ARM64 virtual machines.
+ - ARM64 PCI ECAM access and modern VirtIO PCI bring-up.
+ - ARM64 DMA carveout support for VirtIO queues.
+ - Initial `board/cloud_hypervisor/arm64` support for direct-kernel
+   `GOOS=tamago GOARCH=arm64` appliances.
+ - Validation on a Fedora Asahi ARM64 KVM host with Cloud Hypervisor boot and
+   virtio-net packet delivery through a tap-backed appliance smoke test.
+
+This work is intended to become upstreamable TamaGo support after broader
+validation on Cloud Hypervisor, SpectrumOS, and the relevant ARM64/AMD64 host
+combinations. The upstream TamaGo project remains
+https://github.com/usbarmory/tamago.
+
+See [UPSTREAMING.md](UPSTREAMING.md) for the proposed patch grouping and
+validation checklist.
+
 Introduction
 ============
 
@@ -101,6 +126,7 @@ The following table summarizes currently supported ARM64 SoCs and boards
 
 | SoC               | Board                                                                                                    | SoC package                                                                      | Board package                                                                            |
 |-------------------|----------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------|------------------------------------------------------------------------------------------|
+| ARM64 virtual CPU | [Cloud Hypervisor/QEMU virt](https://www.cloudhypervisor.org)                                            | [arm64](https://github.com/GoodAncestor/tamago/tree/spectrum-cloud-hypervisor-arm64/arm64) | [cloud_hypervisor/arm64](https://github.com/GoodAncestor/tamago/tree/spectrum-cloud-hypervisor-arm64/board/cloud_hypervisor/arm64) |
 | NXP i.MX8M Plus   | [8MPLUSLPD4-EVK](https://www.nxp.com/design/design-center/development-boards-and-designs/8MPLUSLPD4-EVK) | [imx8mp](https://github.com/usbarmory/tamago/tree/master/soc/nxp/imx8mp)         | [imx8mpevk](https://github.com/usbarmory/tamago/tree/master/board/nxp/imx8mpevk)         |
 | Microchip LAN969x | [EVB-LAN9696-24port](https://www.microchip.com/en-us/development-tool/ev23x71a)                          | [lan969x](https://github.com/usbarmory/tamago/tree/master/soc/microchip/lan969x) | [lan9696evb](https://github.com/usbarmory/tamago/tree/master/board/microchip/lan9696evb) |
 
