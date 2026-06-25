@@ -39,6 +39,8 @@ const (
 	MAGIC   = 0x74726976 // "virt"
 	VERSION = 0x02
 
+	pageSize = 4096
+
 	// bits 0 to 23, and 50 to 63
 	deviceSpecificFeatureMask = 0xfffc000000ffffff
 	// bits 24 to 49
@@ -89,11 +91,10 @@ func negotiate(deviceFeatures, driverFeatures uint64) (features uint64) {
 	bits.Clear64(&features, Packed)
 	bits.Clear64(&features, NotificationData)
 
-	// keep all remaining reserved features, clear device type ones
-	features &= deviceReservedFeatureMask
-
-	// apply device type features from the driver
-	features &= driverFeatures
+	// keep all remaining reserved features, apply only supported device type
+	// features from the driver
+	features = (features & deviceReservedFeatureMask) |
+		(features & deviceSpecificFeatureMask & driverFeatures)
 
 	return
 }
