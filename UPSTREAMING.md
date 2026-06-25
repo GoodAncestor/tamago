@@ -88,3 +88,27 @@ The `armory-ssh-agent` downstream appliance branch validates:
 * Cloud Hypervisor ARM64 tap-backed network smoke.
 * USB Armory Mk II hardware CDC ECM, HTTP, eMMC persistence status, and
   SSH-agent signing smoke.
+
+Local package validation
+========================
+
+Use the TamaGo-enabled Go toolchain for package checks. A standard host
+`go test ./...` is expected to fail because board and SoC packages import
+`runtime/goos`, which is provided by the TamaGo toolchain rather than the
+host Go runtime.
+
+Relevant ARM64 VM package check:
+
+```sh
+GOOS=tamago GOOSPKG=github.com/usbarmory/tamago GOARCH=arm64 \
+  /home/cct/.cache/tamago-go/tamago-go1.26.4/bin/go test \
+  ./board/cloud_hypervisor/arm64 ./board/qemu/virt_arm64 ./arm64 ./kvm/virtio
+```
+
+Relevant USB Armory package check:
+
+```sh
+GOOS=tamago GOOSPKG=github.com/usbarmory/tamago GOARCH=arm \
+  /home/cct/.cache/tamago-go/tamago-go1.26.4/bin/go test \
+  ./board/usbarmory/mk2 ./soc/nxp/usb ./soc/nxp/usdhc ./dma
+```
