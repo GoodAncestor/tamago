@@ -21,6 +21,8 @@ The current fork-specific focus is ARM64 Cloud Hypervisor/QEMU `virt` support:
  - ARM64 DMA carveout support for VirtIO queues.
  - Initial `board/cloud_hypervisor/arm64` support for direct-kernel
    `GOOS=tamago GOARCH=arm64` appliances.
+ - Early validation on Fedora Asahi 16K-page hosts, where the next known
+   blocker is ARM64 16K-granule MMU support.
 
 This work is intended to become upstreamable TamaGo support after broader
 validation on Cloud Hypervisor, SpectrumOS, and the relevant ARM64/AMD64 host
