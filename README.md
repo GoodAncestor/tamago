@@ -29,6 +29,9 @@ validation on Cloud Hypervisor, SpectrumOS, and the relevant ARM64/AMD64 host
 combinations. The upstream TamaGo project remains
 https://github.com/usbarmory/tamago.
 
+See [UPSTREAMING.md](UPSTREAMING.md) for the proposed patch grouping and
+validation checklist.
+
 Introduction
 ============
 
