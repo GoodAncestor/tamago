@@ -6,6 +6,8 @@
 // Use of this source code is governed by the license
 // that can be found in the LICENSE file.
 
+//go:build amd64
+
 package virtio
 
 import (
@@ -23,7 +25,6 @@ const (
 )
 
 const (
-	pageSize            = 4096
 	configurationLength = 20
 )
 

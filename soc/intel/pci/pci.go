@@ -17,8 +17,10 @@
 package pci
 
 import (
+	"sync/atomic"
+	"unsafe"
+
 	"github.com/usbarmory/tamago/bits"
-	"github.com/usbarmory/tamago/internal/reg"
 )
 
 const (
@@ -31,12 +33,19 @@ const (
 	maxDevices = 32
 )
 
+var ecamBase uint64
+
 // Header Type 0x0 offsets
 const (
 	VendorID           = 0x00
 	Command            = 0x04
 	RevisionID         = 0x08
 	Bar0               = 0x10
+	Bar1               = 0x14
+	Bar2               = 0x18
+	Bar3               = 0x1c
+	Bar4               = 0x20
+	Bar5               = 0x24
 	CapabilitiesOffset = 0x34
 )
 
@@ -57,11 +66,35 @@ func (d *Device) address(fn uint32, off uint32) uint32 {
 	return 1<<31 | d.Bus<<16 | d.Slot<<11 | fn<<8 | off&0xfc
 }
 
+func (d *Device) ecamAddress(fn uint32, off uint32) uint64 {
+	return ecamBase + uint64(d.Bus)<<20 + uint64(d.Slot)<<15 + uint64(fn)<<12 + uint64(off&0xfc)
+}
+
+// ConfigureECAM configures PCI Configuration Space access through an Enhanced
+// Configuration Access Mechanism base address.
+func ConfigureECAM(base uint64) {
+	ecamBase = base
+}
+
+func read32(addr uint64) uint32 {
+	reg := (*uint32)(unsafe.Pointer(uintptr(addr)))
+	return atomic.LoadUint32(reg)
+}
+
+func write32(addr uint64, val uint32) {
+	reg := (*uint32)(unsafe.Pointer(uintptr(addr)))
+	atomic.StoreUint32(reg, val)
+}
+
 // Read reads the device configuration space for a given function and
 // register offset.
 func (d *Device) Read(fn uint32, off uint32) uint32 {
-	reg.Out32(CONFIG_ADDRESS, d.address(fn, off))
-	return reg.In32(CONFIG_DATA) >> ((off & 2) * 8)
+	if ecamBase != 0 {
+		return read32(d.ecamAddress(fn, off)) >> ((off & 2) * 8)
+	}
+
+	configPortWrite(CONFIG_ADDRESS, d.address(fn, off))
+	return configPortRead(CONFIG_DATA) >> ((off & 2) * 8)
 }
 
 // Write writes the device configuration space for a given function and
@@ -71,8 +104,13 @@ func (d *Device) Write(fn uint32, off uint32, val uint32) {
 		return
 	}
 
-	reg.Out32(CONFIG_ADDRESS, d.address(fn, off))
-	reg.Out32(CONFIG_DATA, val)
+	if ecamBase != 0 {
+		write32(d.ecamAddress(fn, off), val)
+		return
+	}
+
+	configPortWrite(CONFIG_ADDRESS, d.address(fn, off))
+	configPortWrite(CONFIG_DATA, val)
 }
 
 // BaseAddress returns a device Base Address register (BAR).

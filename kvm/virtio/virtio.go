@@ -39,6 +39,8 @@ const (
 	MAGIC   = 0x74726976 // "virt"
 	VERSION = 0x02
 
+	pageSize = 4096
+
 	// bits 0 to 23, and 50 to 63
 	deviceSpecificFeatureMask = 0xfffc000000ffffff
 	// bits 24 to 49
