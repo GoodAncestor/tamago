@@ -226,7 +226,11 @@ func (io *PCI) Init(features uint64) (err error) {
 // Config returns the device configuration layout.
 func (io *PCI) Config(size int) (config []byte) {
 	config = make([]byte, size)
-	copy(config, io.config)
+
+	for i := range config {
+		config[i] = *(*byte)(unsafe.Pointer(uintptr(io.configAddr + uint(i))))
+	}
+
 	return
 }
 

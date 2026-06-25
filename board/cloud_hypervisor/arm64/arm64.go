@@ -46,8 +46,8 @@ const (
 	VIRTIO_NET_PCI_VENDOR = 0x1af4 // Red Hat, Inc.
 	VIRTIO_NET_PCI_DEVICE = 0x1041 // Virtio 1.0 network device
 
-	VIRTIO_NET_BAR1 = 0x10058000
-	VIRTIO_NET_BAR4 = 0x10040000
+	VIRTIO_NET_BAR0      = 0x40000000
+	VIRTIO_NET_BAR0_HIGH = 0x00000001
 )
 
 // Peripheral instances.
@@ -88,12 +88,11 @@ func Init() {
 	pci.ConfigureECAM(PCIE_ECAM_BASE)
 
 	if dev := pci.Probe(0, VIRTIO_NET_PCI_VENDOR, VIRTIO_NET_PCI_DEVICE); dev != nil {
-		// set I/O Space, Memory Space and Bus Master Enable
-		dev.Write(0, pci.Command, 0x7)
-		// assign BARs inside the generic PCI host bridge memory window
-		dev.Write(0, pci.Bar1, VIRTIO_NET_BAR1)
-		dev.Write(0, pci.Bar4, VIRTIO_NET_BAR4)
-		dev.Write(0, pci.Bar4+4, 0)
+		// Assign the virtio 64-bit BAR inside the generic PCI host bridge
+		// 64-bit MMIO window, then enable memory space and bus mastering.
+		dev.Write(0, pci.Bar0, VIRTIO_NET_BAR0)
+		dev.Write(0, pci.Bar0+4, VIRTIO_NET_BAR0_HIGH)
+		dev.Write(0, pci.Command, 1<<1|1<<2)
 	}
 
 	goos.Exit = func(_ int32) {
